@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { BrowserProvider, ethers, JsonRpcSigner } from "ethers";
 import Image from "next/image";
 import Paper from "@mui/material/Paper";
 import InputBase from "@mui/material/InputBase";
@@ -11,34 +12,167 @@ import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import Box from "@mui/material/Box";
 import DialogTitle from "@mui/material/DialogTitle";
+import { DomainRegistry } from "@/const/const";
+import { useEth } from "@/hooks/useEthHook";
+import { splitStringByFirstDot } from "@/helpers/splitStringByFirstDot";
+import { validateAddress } from "@/helpers/validateAddress";
+import { useUsdc } from "@/hooks/useUsdc";
+import { useDomains } from "@/hooks/useDomains";
+
+declare global {
+  interface Window {
+    ethereum: any;
+  }
+}
+
+const CONTRACT_ADDRESS = "0x200D6ce83a828009B8883Ddf3e045870e6961aab";
+
+export interface IWeb3State {
+  address: string | null;
+  currentChain: number | null;
+  signer: JsonRpcSigner | null;
+  provider: BrowserProvider | null;
+  isAuthenticated: boolean;
+}
 
 export default function Home() {
+  const [value, setValue] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
+  const [domainMessage, setDomainMessage] = useState<string>("");
+  const [contract, setContract] = useState<any>(null);
+  const [isCanBuyDomain, setIsCanBuyDomain] = useState<boolean>(false);
+  const [priceEth, setPriceEth] = useState<string>("");
+  const [priceUsdc, setPriceUsdc] = useState<string>("");
   const [open, setOpen] = useState(false);
+  const [isChildDomain, setIsChildDomain] = useState<boolean>(false);
+  const initialWeb3State = {
+    address: null,
+    currentChain: null,
+    signer: null,
+    provider: null,
+    isAuthenticated: false,
+  };
+  const [state, setState] = useState<IWeb3State>(initialWeb3State);
+  const { onBuy } = useEth({
+    contract,
+    domain: value,
+    provider: state.provider,
+  });
+  const { onSetDomains } = useDomains({ domain: value });
 
-  const handleOpen = () => {
+  const { onBuyUsdc } = useUsdc({
+    signer: state.signer,
+    contract,
+    domain: value,
+    provider: state.provider,
+  });
+
+  const connectWallet = useCallback(async () => {
+    try {
+      const { ethereum } = window;
+
+      if (!ethereum) {
+        return alert({
+          status: "error",
+          position: "top-right",
+          title: "Error",
+          description: "No ethereum wallet found",
+        });
+      }
+      const provider = new ethers.BrowserProvider(ethereum);
+
+      const accounts: string[] = await provider.send("eth_requestAccounts", []);
+
+      if (accounts.length > 0) {
+        const signer = await provider.getSigner();
+        const chain = Number(await (await provider.getNetwork()).chainId);
+
+        setState({
+          ...state,
+          address: accounts[0],
+          signer,
+          currentChain: chain,
+          provider,
+          isAuthenticated: true,
+        });
+
+        localStorage.setItem("isAuthenticated", "true");
+      }
+    } catch {}
+  }, [state]);
+
+  useEffect(() => {
+    if (state.signer) {
+      setContract(
+        new ethers.Contract(CONTRACT_ADDRESS, DomainRegistry.abi, state.signer),
+      );
+    }
+  }, [state]);
+
+  const greet = async () => {
+    if (contract) {
+      try {
+        const priceUSDC = await contract.getRegistrationPriceInUsdc();
+        const priceETH = await contract.getRegistrationPriceInEth();
+
+        setPriceEth(ethers.formatEther(priceETH));
+        setPriceUsdc(priceUSDC.toString());
+      } catch (error) {
+        console.log(error);
+      }
+    }
+  };
+
+  const handleOpen = async () => {
     setOpen(true);
+    await greet();
+    await onSetDomains();
   };
 
   const handleClose = () => {
     setOpen(false);
   };
 
-  const handleFetchJsonData = async () => {
-    fetch("https://jsonplaceholder.typicode.com/todos/1")
-      .then((response) => {
-        setLoading(true);
-        return response.json();
-      })
-      .then((json) => {
-        console.log(json);
-        setLoading(false);
-        handleOpen();
-      })
-      .catch((error) => {
+  const handleInputChange = (event: any) => {
+    setValue(event.target.value);
+  };
+
+  const handleSearchDomain = async (event: any) => {
+    event.preventDefault();
+
+    if (value) {
+      try {
+        const [, parent] = splitStringByFirstDot(value);
+
+        if (parent) {
+          const isExistingParentDomain = validateAddress(
+            await contract.getDomainOwner(parent),
+          );
+
+          if (!isExistingParentDomain) {
+            setDomainMessage(`This  ${parent} domain is not existing`);
+            setIsCanBuyDomain(false);
+            setIsChildDomain(true);
+            return;
+          }
+        }
+
+        const isNotAvailableDomain = validateAddress(
+          await contract.getDomainOwner(value),
+        );
+        if (isNotAvailableDomain) {
+          setDomainMessage(`This  ${value} domain is already taken`);
+          setIsCanBuyDomain(false);
+          return;
+        }
+
+        setIsCanBuyDomain(true);
+        setIsChildDomain(false);
+        setDomainMessage(`This  ${value} domain is available`);
+      } catch (error) {
         console.log(error);
-        setLoading(false);
-      });
+      }
+    }
   };
 
   return (
@@ -48,29 +182,47 @@ export default function Home() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
+          flexDirection: "column",
           minHeight: "100vh",
           backgroundColor: "whitesmoke",
         }}
       >
-        <Paper
-          component="form"
-          sx={{
-            p: "2px 4px",
-            display: "flex",
-            alignItems: "center",
-            width: 400,
-          }}
-        >
-          <InputBase sx={{ ml: 1, flex: 1 }} placeholder="Search Blockchain" />
-          <IconButton
-            type="button"
-            sx={{ p: "10px" }}
-            aria-label="search"
-            onClick={handleFetchJsonData}
+        <button type="button" onClick={connectWallet}>
+          Connect wallet
+        </button>
+        {state.isAuthenticated && (
+          <Paper
+            component="form"
+            onSubmit={handleSearchDomain}
+            sx={{
+              p: "2px 4px",
+              display: "flex",
+              alignItems: "center",
+              width: 400,
+            }}
           >
-            <SearchIcon />
-          </IconButton>
-        </Paper>
+            <InputBase
+              sx={{ ml: 1, flex: 1 }}
+              placeholder="Search Blockchain"
+              onChange={handleInputChange}
+              value={value}
+            />
+            <IconButton
+              type="submit"
+              sx={{ p: "10px" }}
+              aria-label="search"
+              disabled={!value}
+            >
+              <SearchIcon />
+            </IconButton>
+          </Paper>
+        )}
+        {domainMessage && <p style={{ color: "black" }}>{domainMessage}</p>}
+        {isCanBuyDomain && (
+          <button type="button" onClick={handleOpen}>
+            Buy now
+          </button>
+        )}
       </main>
       <Dialog
         open={open}
@@ -88,33 +240,35 @@ export default function Home() {
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
+              flexDirection: "column",
               gap: "20px",
             }}
           >
             <Button
               sx={{ display: "flex", gap: "10px", fontSize: "20px" }}
-              onClick={handleClose}
+              onClick={onBuyUsdc}
             >
-              Bitcoin
               <Image
                 alt="bitcoin icon"
                 width={25}
                 height={25}
-                src="/images/bitcoin-logo-colored.svg"
+                src="/images/usd-coin-usdc-logo.svg"
               />
+              {priceUsdc && <p>{Number(priceUsdc) / Math.pow(10, 6)}</p>}
             </Button>
 
             <Button
+              type="button"
               sx={{ display: "flex", gap: "10px", fontSize: "20px" }}
-              onClick={handleClose}
+              onClick={onBuy}
             >
-              Ethereum
               <Image
                 alt="bitcoin icon"
                 width={25}
                 height={25}
                 src="/images/ethereum-colored.svg"
               />
+              {priceEth && <p>{priceEth}</p>}
             </Button>
           </DialogActions>
         </Box>
