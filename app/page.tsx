@@ -3,10 +3,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { BrowserProvider, ethers, JsonRpcSigner } from "ethers";
 import Image from "next/image";
-import Paper from "@mui/material/Paper";
-import InputBase from "@mui/material/InputBase";
-import IconButton from "@mui/material/IconButton";
-import SearchIcon from "@mui/icons-material/Search";
 import Button from "@mui/material/Button";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
@@ -14,13 +10,21 @@ import Box from "@mui/material/Box";
 import DialogTitle from "@mui/material/DialogTitle";
 import { DomainRegistry } from "@/const/const";
 import { useEth } from "@/hooks/useEthHook";
-import { splitStringByFirstDot } from "@/helpers/splitStringByFirstDot";
-import { validateAddress } from "@/helpers/validateAddress";
 import { useUsdc } from "@/hooks/useUsdc";
 import { useDomains } from "@/hooks/useDomains";
 import { UserFunds } from "@/components/UserFunds";
 import { transformEther } from "@/helpers/transformEther";
 import { transformUsdc } from "@/helpers/transformUsdc";
+import { UserDomains } from "@/components/UserDomains";
+import { DomainsSearch } from "@/components/DomainsSearch";
+
+const initialWeb3State = {
+  address: null,
+  currentChain: null,
+  signer: null,
+  provider: null,
+  isAuthenticated: false,
+};
 
 declare global {
   interface Window {
@@ -28,9 +32,9 @@ declare global {
   }
 }
 
-const CONTRACT_ADDRESS = "0xcCd898F439a9FE6827681bB583EeF345E1ebFbaa";
+const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS as string;
 
-export interface IWeb3State {
+interface IWeb3State {
   address: string | null;
   currentChain: number | null;
   signer: JsonRpcSigner | null;
@@ -40,38 +44,27 @@ export interface IWeb3State {
 
 export default function Home() {
   const [value, setValue] = useState<string>("");
-  const [loading, setLoading] = useState<boolean>(false);
-  const [domainMessage, setDomainMessage] = useState<string>("");
   const [contract, setContract] = useState<any>(null);
   const [isCanBuyDomain, setIsCanBuyDomain] = useState<boolean>(false);
   const [priceEth, setPriceEth] = useState<string>("");
   const [priceUsdc, setPriceUsdc] = useState<string>("");
   const [open, setOpen] = useState(false);
-  const [isChildDomain, setIsChildDomain] = useState<boolean>(false);
-  const [myDomains, setMyDomains] = useState<
-    { domain: string; blockNumber: number }[]
-  >([]);
+  const [triggerDomains, setTriggerDomains] = useState<boolean>(false);
 
-  const initialWeb3State = {
-    address: null,
-    currentChain: null,
-    signer: null,
-    provider: null,
-    isAuthenticated: false,
-  };
   const [state, setState] = useState<IWeb3State>(initialWeb3State);
   const { onBuy } = useEth({
     contract,
     domain: value,
     provider: state.provider,
+    setTriggerDomains,
   });
   const { onSetDomains } = useDomains({ domain: value });
-
   const { onBuyUsdc } = useUsdc({
     signer: state.signer,
     contract,
     domain: value,
     provider: state.provider,
+    setTriggerDomains,
   });
 
   const connectWallet = useCallback(async () => {
@@ -79,12 +72,7 @@ export default function Home() {
       const { ethereum } = window;
 
       if (!ethereum) {
-        return alert({
-          status: "error",
-          position: "top-right",
-          title: "Error",
-          description: "No ethereum wallet found",
-        });
+        return alert("No ethereum wallet found");
       }
       const provider = new ethers.BrowserProvider(ethereum);
 
@@ -105,7 +93,9 @@ export default function Home() {
 
         localStorage.setItem("isAuthenticated", "true");
       }
-    } catch {}
+    } catch (error) {
+      console.log(error);
+    }
   }, [state]);
 
   useEffect(() => {
@@ -116,7 +106,7 @@ export default function Home() {
     }
   }, [state]);
 
-  const greet = async () => {
+  const getPrice = async () => {
     if (contract) {
       try {
         const priceUSDC = await contract.getRegistrationPriceInUsdc();
@@ -132,82 +122,13 @@ export default function Home() {
 
   const handleOpen = async () => {
     setOpen(true);
-    await greet();
+    await getPrice();
     await onSetDomains();
   };
 
   const handleClose = () => {
     setOpen(false);
   };
-
-  const handleInputChange = (event: any) => {
-    setValue(event.target.value);
-  };
-
-  const handleSearchDomain = async (event: any) => {
-    event.preventDefault();
-
-    if (value) {
-      try {
-        const [, parent] = splitStringByFirstDot(value);
-
-        if (parent) {
-          const isExistingParentDomain = validateAddress(
-            await contract.getDomainOwner(parent),
-          );
-
-          if (!isExistingParentDomain) {
-            setDomainMessage(`This  ${parent} domain is not existing`);
-            setIsCanBuyDomain(false);
-            setIsChildDomain(true);
-            return;
-          }
-        }
-
-        const domainOwner = await contract.getDomainOwner(value);
-
-        const isNotAvailableDomain = validateAddress(domainOwner);
-        if (isNotAvailableDomain) {
-          setDomainMessage(
-            `This  ${value} domain is already taken by ${domainOwner}`,
-          );
-          setIsCanBuyDomain(false);
-          return;
-        }
-
-        setIsCanBuyDomain(true);
-        setIsChildDomain(false);
-        setDomainMessage(`This  ${value} domain is available`);
-      } catch (error) {
-        console.log(error);
-      }
-    }
-  };
-
-  useEffect(() => {
-    if (state.address && contract) {
-      (async () => {
-        const filter = contract.filters.DomainRegistered(null, state.address);
-
-        const logs: any = await contract.queryFilter(filter);
-
-        let array = [];
-
-        for (let i = 0; i < logs.length; i++) {
-          array.push(i);
-        }
-
-        const mapedArr = array.map((item) => {
-          return {
-            domain: logs[item].args[0],
-            blockNumber: logs[item].blockNumber,
-          };
-        });
-
-        setMyDomains(mapedArr);
-      })();
-    }
-  }, [state.address, contract]);
 
   return (
     <>
@@ -225,63 +146,36 @@ export default function Home() {
           <UserFunds contract={contract} address={state.address as string} />
         )}
 
-        <Button
-          type="button"
-          onClick={connectWallet}
-          sx={{
-            marginTop: "100px",
-          }}
-        >
-          Connect wallet
-        </Button>
-        {state.isAuthenticated && (
-          <Paper
-            component="form"
-            onSubmit={handleSearchDomain}
+        {!state.isAuthenticated && (
+          <Button
+            type="button"
+            onClick={connectWallet}
             sx={{
-              p: "2px 4px",
-              display: "flex",
-              alignItems: "center",
-              width: 400,
+              marginTop: "100px",
             }}
           >
-            <InputBase
-              sx={{ ml: 1, flex: 1 }}
-              placeholder="Search Blockchain"
-              onChange={handleInputChange}
-              value={value}
-            />
-            <IconButton
-              type="submit"
-              sx={{ p: "10px" }}
-              aria-label="search"
-              disabled={!value}
-            >
-              <SearchIcon />
-            </IconButton>
-          </Paper>
+            Connect wallet
+          </Button>
         )}
-        {domainMessage && <p style={{ color: "black" }}>{domainMessage}</p>}
+        <DomainsSearch
+          contract={contract}
+          setValue={setValue}
+          setIsCanBuyDomain={setIsCanBuyDomain}
+          isAuthenticated={state.isAuthenticated}
+          value={value}
+        />
 
         {isCanBuyDomain && (
           <Button type="button" onClick={handleOpen}>
             Buy now
           </Button>
         )}
-        {myDomains.length >= 0 && state.isAuthenticated && (
-          <div style={{ marginTop: "50px" }}>
-            <h2>My domains:</h2>
-            {myDomains.map(({ domain, blockNumber }) => (
-              <div
-                key={domain}
-                style={{ display: "flex", alignItems: "center", gap: "50px" }}
-              >
-                <p>{domain}</p>
-                <p>{blockNumber}</p>
-              </div>
-            ))}
-          </div>
-        )}
+        <UserDomains
+          contract={contract}
+          address={state.address as string}
+          isAuthenticated={state.isAuthenticated}
+          triggerDomains={triggerDomains}
+        />
       </main>
       <Dialog
         open={open}

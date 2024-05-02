@@ -5,9 +5,9 @@ import Paper from "@mui/material/Paper";
 import InputBase from "@mui/material/InputBase";
 import IconButton from "@mui/material/IconButton";
 import SearchIcon from "@mui/icons-material/Search";
+import Button from "@mui/material/Button";
 import { transformEther } from "@/helpers/transformEther";
 import { transformUsdc } from "@/helpers/transformUsdc";
-import Button from "@mui/material/Button";
 
 interface Props {
   contract: any;
@@ -51,7 +51,6 @@ export const UserFunds = ({ contract, address }: Props) => {
         usdc: transformUsdc(response.usdcFunds),
         eth: transformEther(response.ethFunds),
       });
-      console.log(response);
     } catch (error) {
       console.log(error);
     }
@@ -65,7 +64,6 @@ export const UserFunds = ({ contract, address }: Props) => {
     if (yourFunds.eth) {
       try {
         const response = await contract.withdrawDomainEth();
-        console.log(response);
       } catch (error) {
         console.log(error);
       } finally {
@@ -77,7 +75,6 @@ export const UserFunds = ({ contract, address }: Props) => {
     if (yourFunds.usdc) {
       try {
         const response = await contract.withdrawDomainUsdc();
-        console.log(response);
       } catch (error) {
         console.log(error);
       } finally {

@@ -1,20 +1,23 @@
-import { useEffect, useState } from "react";
+import { Dispatch, SetStateAction, useEffect, useState } from "react";
 import { ethers } from "ethers";
 import { USDC_ABI } from "@/const/const";
 import { useDomains } from "@/hooks/useDomains";
 
-const CONTRACT_ADDRESS = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238";
+const CONTRACT_ADDRESS = process.env
+  .NEXT_PUBLIC_USDC_CONTRACT_ADDRESS as string;
 
 export const useUsdc = ({
   signer,
   contract,
   domain,
   provider,
+  setTriggerDomains,
 }: {
   provider: any;
   signer: any;
   contract: any;
   domain: string;
+  setTriggerDomains: Dispatch<SetStateAction<boolean>>;
 }) => {
   const [usdcContract, setUsdcContract] = useState<any>(null);
 
@@ -35,10 +38,11 @@ export const useUsdc = ({
       if (price) {
         const response = await usdcContract.approve(contract.target, price);
         await response.wait();
-        console.log({ response });
       }
     } catch (error) {
       console.log(error);
+    } finally {
+      setTriggerDomains((prevState) => !prevState);
     }
   };
 
@@ -52,7 +56,6 @@ export const useUsdc = ({
         value: price,
       });
       await response.wait();
-      console.log({ response });
     } catch (e) {
       console.log(e);
     }
@@ -71,7 +74,6 @@ export const useUsdc = ({
           value: price,
         });
       await buyDomainTransaction.wait();
-      console.log(buyDomainTransaction);
     } catch (error: any) {
       console.dir(error);
       alert("Influence money");
