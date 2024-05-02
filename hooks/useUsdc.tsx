@@ -51,6 +51,7 @@ export const useUsdc = ({
       const response = await contract.buyChildDomainViaUsdc(parent, child, {
         value: price,
       });
+      await response.wait();
       console.log({ response });
     } catch (e) {
       console.log(e);
@@ -69,6 +70,7 @@ export const useUsdc = ({
         .buyDomainViaUsdc(domain, {
           value: price,
         });
+      await buyDomainTransaction.wait();
       console.log(buyDomainTransaction);
     } catch (error: any) {
       console.dir(error);

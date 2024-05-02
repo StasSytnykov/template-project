@@ -18,6 +18,9 @@ import { splitStringByFirstDot } from "@/helpers/splitStringByFirstDot";
 import { validateAddress } from "@/helpers/validateAddress";
 import { useUsdc } from "@/hooks/useUsdc";
 import { useDomains } from "@/hooks/useDomains";
+import { UserFunds } from "@/components/UserFunds";
+import { transformEther } from "@/helpers/transformEther";
+import { transformUsdc } from "@/helpers/transformUsdc";
 
 declare global {
   interface Window {
@@ -25,7 +28,7 @@ declare global {
   }
 }
 
-const CONTRACT_ADDRESS = "0x200D6ce83a828009B8883Ddf3e045870e6961aab";
+const CONTRACT_ADDRESS = "0xcCd898F439a9FE6827681bB583EeF345E1ebFbaa";
 
 export interface IWeb3State {
   address: string | null;
@@ -45,6 +48,10 @@ export default function Home() {
   const [priceUsdc, setPriceUsdc] = useState<string>("");
   const [open, setOpen] = useState(false);
   const [isChildDomain, setIsChildDomain] = useState<boolean>(false);
+  const [myDomains, setMyDomains] = useState<
+    { domain: string; blockNumber: number }[]
+  >([]);
+
   const initialWeb3State = {
     address: null,
     currentChain: null,
@@ -115,7 +122,7 @@ export default function Home() {
         const priceUSDC = await contract.getRegistrationPriceInUsdc();
         const priceETH = await contract.getRegistrationPriceInEth();
 
-        setPriceEth(ethers.formatEther(priceETH));
+        setPriceEth(transformEther(priceETH));
         setPriceUsdc(priceUSDC.toString());
       } catch (error) {
         console.log(error);
@@ -157,11 +164,13 @@ export default function Home() {
           }
         }
 
-        const isNotAvailableDomain = validateAddress(
-          await contract.getDomainOwner(value),
-        );
+        const domainOwner = await contract.getDomainOwner(value);
+
+        const isNotAvailableDomain = validateAddress(domainOwner);
         if (isNotAvailableDomain) {
-          setDomainMessage(`This  ${value} domain is already taken`);
+          setDomainMessage(
+            `This  ${value} domain is already taken by ${domainOwner}`,
+          );
           setIsCanBuyDomain(false);
           return;
         }
@@ -175,21 +184,56 @@ export default function Home() {
     }
   };
 
+  useEffect(() => {
+    if (state.address && contract) {
+      (async () => {
+        const filter = contract.filters.DomainRegistered(null, state.address);
+
+        const logs: any = await contract.queryFilter(filter);
+
+        let array = [];
+
+        for (let i = 0; i < logs.length; i++) {
+          array.push(i);
+        }
+
+        const mapedArr = array.map((item) => {
+          return {
+            domain: logs[item].args[0],
+            blockNumber: logs[item].blockNumber,
+          };
+        });
+
+        setMyDomains(mapedArr);
+      })();
+    }
+  }, [state.address, contract]);
+
   return (
     <>
       <main
         style={{
           display: "flex",
           alignItems: "center",
-          justifyContent: "center",
           flexDirection: "column",
           minHeight: "100vh",
           backgroundColor: "whitesmoke",
+          color: "black",
         }}
       >
-        <button type="button" onClick={connectWallet}>
+        {state.isAuthenticated && (
+          <UserFunds contract={contract} address={state.address as string} />
+        )}
+
+        <Button
+          type="button"
+          onClick={connectWallet}
+          sx={{
+            marginTop: "100px",
+          }}
+        >
           Connect wallet
-        </button>
+        </Button>
         {state.isAuthenticated && (
           <Paper
             component="form"
@@ -218,10 +262,25 @@ export default function Home() {
           </Paper>
         )}
         {domainMessage && <p style={{ color: "black" }}>{domainMessage}</p>}
+
         {isCanBuyDomain && (
-          <button type="button" onClick={handleOpen}>
+          <Button type="button" onClick={handleOpen}>
             Buy now
-          </button>
+          </Button>
+        )}
+        {myDomains.length >= 0 && state.isAuthenticated && (
+          <div style={{ marginTop: "50px" }}>
+            <h2>My domains:</h2>
+            {myDomains.map(({ domain, blockNumber }) => (
+              <div
+                key={domain}
+                style={{ display: "flex", alignItems: "center", gap: "50px" }}
+              >
+                <p>{domain}</p>
+                <p>{blockNumber}</p>
+              </div>
+            ))}
+          </div>
         )}
       </main>
       <Dialog
@@ -254,7 +313,7 @@ export default function Home() {
                 height={25}
                 src="/images/usd-coin-usdc-logo.svg"
               />
-              {priceUsdc && <p>{Number(priceUsdc) / Math.pow(10, 6)}</p>}
+              {priceUsdc && <p>{transformUsdc(priceUsdc)}</p>}
             </Button>
 
             <Button

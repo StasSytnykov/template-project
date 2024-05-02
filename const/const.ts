@@ -1,6 +1,30 @@
 export const DomainRegistry = {
   abi: [
     {
+      inputs: [
+        {
+          internalType: "address",
+          name: "controller",
+          type: "address",
+        },
+      ],
+      name: "getControllerFunds",
+      outputs: [
+        {
+          internalType: "uint256",
+          name: "usdcFunds",
+          type: "uint256",
+        },
+        {
+          internalType: "uint256",
+          name: "ethFunds",
+          type: "uint256",
+        },
+      ],
+      stateMutability: "view",
+      type: "function",
+    },
+    {
       inputs: [],
       name: "DomainAlreadyTaken",
       type: "error",
